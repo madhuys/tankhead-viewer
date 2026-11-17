@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#16120f">
 <title>TankHead: turret-headed robot</title>
 <style>
   :root { --bg:#16120f; --panel:#211a15ee; --ink:#eadccb; --mute:#a08a74; --rust:#c8642a; --line:#3a2e25; }
@@ -33,6 +34,37 @@
   .dl { border-top:1px solid var(--line); margin-top:10px; padding-top:8px; font-size:12px; color:var(--mute); }
   .dl a { color:var(--ink); text-decoration:none; display:block; padding:2px 0; }
   .dl a:hover { color:var(--rust); }
+  .head { display:flex; align-items:flex-start; gap:8px; }
+  .head > div { flex:1; min-width:0; }
+  #fold { display:none; background:#2b221b; color:var(--ink); border:1px solid var(--line); border-radius:6px; font:inherit; font-size:13px; padding:8px 12px; cursor:pointer; }
+  #body { display:flex; flex-direction:column; min-height:0; flex:1; }
+  canvas { touch-action:none; }
+
+  /* phones: the panel becomes a bottom sheet; the model sits in the space above it */
+  @media (max-width:700px), (max-height:500px) and (pointer:coarse) {
+    html,body { height:100dvh; }
+    #ui { top:auto; left:0; right:0; bottom:0; width:auto; max-height:min(52dvh, 460px); border-radius:14px 14px 0 0;
+          border-width:1px 0 0; padding:10px 14px calc(10px + env(safe-area-inset-bottom)); }
+    #ui::before { content:""; display:block; width:38px; height:4px; border-radius:2px; background:var(--line); margin:0 auto 8px; }
+    #fold { display:block; }
+    .sub { margin-bottom:8px; }
+    #body { overflow:auto; -webkit-overflow-scrolling:touch; }
+    #ui.folded #body { display:none; }
+    #ui.folded .sub { margin-bottom:0; }
+    .seg { margin-bottom:8px; }
+    .seg button, .tools button { padding:10px 4px; font-size:13px; }
+    input[type=range] { height:28px; margin-bottom:6px; }
+    #list { flex:none; overflow:visible; }
+    .part { padding:9px 6px; font-size:14px; }
+    .part input { width:18px; height:18px; }
+    .dl a { padding:7px 0; font-size:14px; }
+    #tip { font-size:14px; }
+  }
+  @media (max-height:500px) and (pointer:coarse) and (orientation:landscape) {
+    #ui { left:auto; top:0; width:min(320px, 45vw); max-height:none; border-radius:0; border-width:0 0 0 1px;
+          padding:10px 12px calc(10px + env(safe-area-inset-bottom)) 12px; }
+    #ui::before { display:none; }
+  }
 </style>
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/jsm/" } }
@@ -40,8 +72,11 @@
 </head>
 <body>
 <div id="ui">
-  <h1>TankHead robot</h1>
-  <div class="sub" id="sub">Nano Banana Pro concept → Rodin textured model → Bang to Parts</div>
+  <div class="head"><div>
+    <h1>TankHead robot</h1>
+    <div class="sub" id="sub">Nano Banana Pro concept → Rodin textured model → Bang to Parts</div>
+  </div><button id="fold" aria-expanded="true">Hide ▾</button></div>
+  <div id="body">
   <div class="seg" id="setSeg"></div>
   <div class="seg" id="modeSeg">
     <button data-m="parts" class="on">Parts</button>
@@ -62,6 +97,7 @@
     <a href="downloads/tankhead-turret-100mm.3mf" download>⬇ 3MF (5.7 MB)</a>
     <a href="downloads/tankhead-turret-100mm-stl.zip" download>⬇ STL, zipped (5.7 MB)</a>
     <a href="downloads/concept.png" target="_blank">Concept art</a>
+  </div>
   </div>
 </div>
 <div id="msg">Loading…</div>
@@ -85,7 +121,7 @@ scene.background = new THREE.Color(0x16120f);
 scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
 scene.environmentIntensity = 0.8;
 const sun = new THREE.DirectionalLight(0xffe2c0, 2.2);
-sun.position.set(3, 5, 2); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+sun.position.set(3, 5, 2); sun.castShadow = true; sun.shadow.mapSize.setScalar(matchMedia('(pointer:coarse)').matches ? 1024 : 2048);
 scene.add(sun, new THREE.HemisphereLight(0xb8c4d0, 0x2a1c12, 0.6));
 const ground = new THREE.Mesh(new THREE.CircleGeometry(6, 64), new THREE.ShadowMaterial({ opacity:0.35 }));
 ground.rotation.x = -Math.PI/2; ground.receiveShadow = true; scene.add(ground);
@@ -169,12 +205,44 @@ if (cfg.whole) {   // the original loads in the background; the parts show at on
 }
 wholeRoot.visible = false;
 
-camera.position.set(2.4, 1.6, 3.2);
+// --- framing: keep the robot whole in the part of the screen the panel leaves free
+const ui = document.getElementById('ui');
+const isSheet = () => getComputedStyle(ui).bottom === '0px' && ui.offsetWidth >= innerWidth - 2;   // bottom sheet (portrait phone)
+const isSide = () => !isSheet() && getComputedStyle(ui).right === '0px';                           // side sheet (landscape phone)
+let fitD = 0;
+function layout() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h);
+  const sh = isSheet() ? ui.offsetHeight : 0, sw = isSide() ? ui.offsetWidth : 0;
+  const fw = Math.max(w - sw, 1), fh = Math.max(h - sh, 1);
+  camera.aspect = fw / fh;                              // the view is framed on the free area, the canvas spans the screen
+  if (sh || sw) camera.setViewOffset(fw, fh, 0, 0, w, h);
+  else camera.clearViewOffset();
+  camera.updateProjectionMatrix();
+  // narrow free area: step back so the robot fits across; keep the user's own zoom and angle
+  const d = 4.06 * Math.max(1, 1.05 / camera.aspect);
+  if (fitD) camera.position.sub(controls.target).multiplyScalar(d / fitD).add(controls.target);
+  fitD = d;
+}
+function frame() {
+  fitD = 0; layout();
+  camera.position.set(2.4, 0.7, 3.2).setLength(fitD).add(controls.target);   // same view angle as the desktop
+  controls.update();
+}
 controls.target.set(0, 0.9, 0);
+frame();
+const fold = document.getElementById('fold');
+fold.onclick = () => {
+  const f = ui.classList.toggle('folded');
+  fold.textContent = f ? 'Controls ▴' : 'Hide ▾'; fold.setAttribute('aria-expanded', String(!f));
+  layout();
+};
+if (isSheet()) fold.click();                          // phones open on the model, controls one tap away
 document.getElementById('msg').remove();
 document.getElementById('sub').textContent = `${partObjs.length} parts · ${cfg.note || ''}`;
 
 // --- UI
+const canHover = matchMedia('(hover: hover)').matches;   // phones: no hover highlight
 const list = document.getElementById('list');
 let solo = null;
 partObjs.forEach(o => {
@@ -183,7 +251,7 @@ partObjs.forEach(o => {
   const cb = row.querySelector('input');
   cb.onclick = e => { e.stopPropagation(); o.visible = cb.checked; };
   row.onclick = () => setSolo(solo === o ? null : o);
-  row.onmouseenter = () => hot(o, true); row.onmouseleave = () => hot(o, false);
+  row.onpointerenter = e => canHover && e.pointerType === 'mouse' && hot(o, true); row.onpointerleave = () => hot(o, false);
   o.userData.row = row; o.userData.cb = cb; list.append(row);
 });
 function setSolo(o) {
@@ -203,6 +271,8 @@ const ex = document.getElementById('explode'), exv = document.getElementById('ex
 function explode() {
   const t = ex.value / 100; exv.textContent = ex.value + '%';
   partObjs.forEach(o => o.position.copy(o.userData.home).addScaledVector(o.userData.dir, t * 1.6));
+  const lift = 0.9 + 0.45 * t - controls.target.y;       // follow the parts up so the head stays in view
+  controls.target.y += lift; camera.position.y += lift;
 }
 ex.oninput = explode;
 document.querySelectorAll('#modeSeg button').forEach(b => b.onclick = () => {
@@ -221,21 +291,38 @@ spinB.onclick = () => { controls.autoRotate = !controls.autoRotate; spinB.textCo
 // hover + click picking in the scene
 const ray = new THREE.Raycaster(), ptr = new THREE.Vector2(), tip = document.getElementById('tip');
 let hovered = null, downAt = null;
-renderer.domElement.addEventListener('pointermove', e => {
+function pick(e) {
   ptr.set(e.clientX/innerWidth*2-1, -(e.clientY/innerHeight)*2+1);
   ray.setFromCamera(ptr, camera);
   const hit = partsRoot.visible ? ray.intersectObjects(partObjs.filter(p => p.visible), true)[0] : null;
-  const o = hit ? hit.object.userData.part : null;
+  return hit ? hit.object.userData.part : null;
+}
+let tipTimer = 0;
+renderer.domElement.addEventListener('pointermove', e => {
+  if (!canHover || e.pointerType !== 'mouse') return;               // touch has no hover
+  const o = pick(e);
   if (o !== hovered) { if (hovered) hot(hovered, false); hovered = o; if (o) hot(o, true); }
   tip.style.display = o ? 'block' : 'none';
   if (o) { tip.textContent = o.userData.label; tip.style.left = e.clientX+14+'px'; tip.style.top = e.clientY+10+'px'; }
 });
 renderer.domElement.addEventListener('pointerdown', e => downAt = [e.clientX, e.clientY]);
 renderer.domElement.addEventListener('pointerup', e => {
-  if (downAt && Math.hypot(e.clientX-downAt[0], e.clientY-downAt[1]) < 4 && hovered) setSolo(solo === hovered ? null : hovered);
+  if (!downAt || Math.hypot(e.clientX-downAt[0], e.clientY-downAt[1]) >= (e.pointerType === 'mouse' ? 4 : 10)) return;
+  if (canHover && e.pointerType === 'mouse') { if (hovered) setSolo(solo === hovered ? null : hovered); return; }
+  const o = pick(e);                                    // a tap: isolate the part and name it for a moment
+  if (o) setSolo(solo === o ? null : o);
+  clearTimeout(tipTimer);
+  tip.style.display = o ? 'block' : 'none';
+  if (o) {
+    tip.textContent = o.userData.label;
+    tip.style.left = Math.min(e.clientX + 12, innerWidth - 180) + 'px'; tip.style.top = Math.max(e.clientY - 40, 8) + 'px';
+    tipTimer = setTimeout(() => tip.style.display = 'none', 1800);
+  }
 });
 
-addEventListener('resize', () => { camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+addEventListener('resize', layout);
+addEventListener('orientationchange', () => setTimeout(frame, 250));
+new ResizeObserver(layout).observe(ui);
 if (q.has('explode')) { ex.value = q.get('explode'); explode(); }
 if (q.get('look') === 'color') document.querySelector('[data-l=color]').click();
 renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
