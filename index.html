@@ -1,16 +1,244 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>TankHead viewer</title>
-  <link rel="stylesheet" href="style.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TankHead: turret-headed robot</title>
+<style>
+  :root { --bg:#16120f; --panel:#211a15ee; --ink:#eadccb; --mute:#a08a74; --rust:#c8642a; --line:#3a2e25; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--ink); font:14px/1.4 ui-sans-serif,system-ui,sans-serif; overflow:hidden; }
+  canvas { display:block; }
+  #ui { position:fixed; top:14px; left:14px; width:290px; max-height:calc(100% - 28px); display:flex; flex-direction:column;
+        background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; backdrop-filter:blur(6px); }
+  h1 { font-size:16px; margin:0 0 2px; letter-spacing:.02em; }
+  .sub { color:var(--mute); font-size:12px; margin-bottom:12px; }
+  .seg { display:flex; gap:4px; margin-bottom:12px; }
+  .seg button { flex:1; background:#2b221b; color:var(--ink); border:1px solid var(--line); border-radius:6px; padding:6px 4px; cursor:pointer; font:inherit; font-size:12px; }
+  .seg button.on { background:var(--rust); border-color:var(--rust); color:#1a110a; font-weight:600; }
+  label.row { display:flex; justify-content:space-between; color:var(--mute); font-size:12px; margin-bottom:4px; }
+  input[type=range] { width:100%; accent-color:var(--rust); margin:0 0 12px; }
+  #list { overflow:auto; border-top:1px solid var(--line); padding-top:8px; flex:1; min-height:60px; }
+  .part { display:flex; align-items:center; gap:8px; padding:4px 6px; border-radius:5px; cursor:pointer; font-size:13px; }
+  .part:hover, .part.hot { background:#33271e; }
+  .part.solo { outline:1px solid var(--rust); }
+  .sw { width:12px; height:12px; border-radius:3px; flex:none; }
+  .part input { accent-color:var(--rust); margin:0; }
+  .part .n { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .part .f { color:var(--mute); font-size:11px; }
+  .tools { display:flex; gap:6px; margin-top:10px; }
+  .tools button { flex:1; background:#2b221b; color:var(--ink); border:1px solid var(--line); border-radius:6px; padding:6px; cursor:pointer; font:inherit; font-size:12px; }
+  #msg { position:fixed; inset:0; display:grid; place-items:center; color:var(--mute); pointer-events:none; }
+  #tip { position:fixed; pointer-events:none; background:#000c; padding:3px 8px; border-radius:4px; font-size:12px; display:none; }
+  .dl { border-top:1px solid var(--line); margin-top:10px; padding-top:8px; font-size:12px; color:var(--mute); }
+  .dl a { color:var(--ink); text-decoration:none; display:block; padding:2px 0; }
+  .dl a:hover { color:var(--rust); }
+</style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/jsm/" } }
+</script>
 </head>
 <body>
-  <main>
-    <h1>TankHead viewer</h1>
-    <p id="greeting">Hello from TankHead viewer.</p>
-  </main>
-  <script src="app.js"></script>
+<div id="ui">
+  <h1>TankHead robot</h1>
+  <div class="sub" id="sub">Nano Banana Pro concept → Rodin textured model → Bang to Parts</div>
+  <div class="seg" id="setSeg"></div>
+  <div class="seg" id="modeSeg">
+    <button data-m="parts" class="on">Parts</button>
+    <button data-m="whole">Whole (textured)</button>
+  </div>
+  <div class="seg" id="lookSeg">
+    <button data-l="tex" class="on">Textured</button>
+    <button data-l="color">Part colours</button>
+  </div>
+  <label class="row"><span>Explode</span><span id="exv">0%</span></label>
+  <input id="explode" type="range" min="0" max="100" value="0">
+  <div id="list"></div>
+  <div class="tools">
+    <button id="all">Show all</button>
+    <button id="spin">Spin: off</button>
+  </div>
+  <div class="dl">Print it (100 mm tall, one piece, flat base):
+    <a href="downloads/tankhead-turret-100mm.3mf" download>⬇ 3MF (5.7 MB)</a>
+    <a href="downloads/tankhead-turret-100mm-stl.zip" download>⬇ STL, zipped (5.7 MB)</a>
+    <a href="downloads/concept.png" target="_blank">Concept art</a>
+  </div>
+</div>
+<div id="msg">Loading…</div>
+<div id="tip"></div>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from './vendor/jsm/libs/meshopt_decoder.mjs';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.shadowMap.enabled = true;
+document.body.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x16120f);
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.8;
+const sun = new THREE.DirectionalLight(0xffe2c0, 2.2);
+sun.position.set(3, 5, 2); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+scene.add(sun, new THREE.HemisphereLight(0xb8c4d0, 0x2a1c12, 0.6));
+const ground = new THREE.Mesh(new THREE.CircleGeometry(6, 64), new THREE.ShadowMaterial({ opacity:0.35 }));
+ground.rotation.x = -Math.PI/2; ground.receiveShadow = true; scene.add(ground);
+
+const camera = new THREE.PerspectiveCamera(40, innerWidth/innerHeight, 0.01, 100);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+const all = await (await fetch('parts.json', {cache:'no-store'})).json();
+const q = new URLSearchParams(location.search);
+const setId = q.get('set') || all.sets[all.sets.length-1].id;
+const cfg = all.sets.find(x => x.id === setId) || all.sets[0];
+cfg.whole = all.whole;
+const setSeg = document.getElementById('setSeg');
+all.sets.forEach(x => { const b = document.createElement('button'); b.textContent = x.label; b.classList.toggle('on', x === cfg);
+  b.onclick = () => { q.set('set', x.id); location.search = q.toString(); }; setSeg.append(b); });
+const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+const msgEl = document.getElementById('msg');
+const load = (url, quiet) => new Promise((ok, err) => loader.load(url, g => ok(g.scene),
+  e => { if (!quiet && msgEl.isConnected) msgEl.textContent = e.total ? `Loading model… ${Math.round(100*e.loaded/e.total)}% of ${(e.total/1e6).toFixed(1)} MB` : `Loading model… ${(e.loaded/1e6).toFixed(1)} MB`; },
+  e => { if (!quiet && msgEl.isConnected) msgEl.textContent = 'Could not load ' + url + ': ' + (e.message || e); err(e); }));
+
+// --- normalise both models to the same frame: 2 units long, sitting on y=0
+function fit(obj, ref) {
+  const box = ref || new THREE.Box3().setFromObject(obj);
+  const size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
+  const s = 2 / Math.max(size.x, size.y, size.z);
+  obj.scale.setScalar(s);
+  obj.position.set(-c.x*s, -box.min.y*s, -c.z*s);
+  return box;
+}
+
+const partsRoot = new THREE.Group(), wholeRoot = new THREE.Group();
+scene.add(partsRoot, wholeRoot);
+
+// parts: one GLB per part, or one GLB whose meshes are the parts
+const partObjs = [];
+const raw = new THREE.Group();
+{
+  const g = await load(cfg.file); raw.add(g);
+}
+{
+  // single file: split by its top-level children (or meshes)
+  const only = raw.children[0];
+  let kids = only.children.length > 1 ? [...only.children] : [];
+  if (kids.length <= 1) { kids = []; only.traverse(o => o.isMesh && kids.push(o)); }
+  only.updateMatrixWorld(true);
+  for (const k of kids) {
+    k.updateMatrixWorld(true);
+    const m = k.matrixWorld.clone();
+    k.removeFromParent(); k.matrix.copy(m); k.matrix.decompose(k.position, k.quaternion, k.scale);
+    k.userData.label = (cfg.labels || {})[k.name] || k.name || 'part';
+    raw.add(k);
+  }
+  only.removeFromParent();
+}
+partsRoot.add(raw);
+const box = fit(raw);
+raw.children.forEach((o, i) => {
+  const pb = new THREE.Box3().setFromObject(o);
+  o.userData.home = o.position.clone();
+  o.userData.centre = pb.getCenter(new THREE.Vector3());
+  let faces = 0; o.traverse(m => { if (m.isMesh) { m.castShadow = true; m.userData.part = o; m.userData.tex = m.material;
+    faces += (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3; } });
+  o.userData.faces = faces;
+  o.userData.col = new THREE.Color().setHSL((i * 0.618) % 1, 0.55, 0.55);
+  partObjs.push(o);
+});
+const centre = box.getCenter(new THREE.Vector3());
+const radius = box.getSize(new THREE.Vector3()).length() / 2;
+partObjs.forEach(o => {
+  const d = o.userData.centre.clone().sub(centre);
+  d.y = Math.max(d.y, 0) * 1.3 + 0.03 * radius;           // lift upward, never into the floor
+  o.userData.dir = d;
+});
+partObjs.sort((a, b) => b.userData.faces - a.userData.faces);
+
+if (cfg.whole) {   // the original loads in the background; the parts show at once
+  load(cfg.whole, true).then(w => { wholeRoot.add(w); fit(w); w.traverse(m => { if (m.isMesh) m.castShadow = true; }); })
+    .catch(e => console.warn('original model', e));
+}
+wholeRoot.visible = false;
+
+camera.position.set(2.4, 1.6, 3.2);
+controls.target.set(0, 0.9, 0);
+document.getElementById('msg').remove();
+document.getElementById('sub').textContent = `${partObjs.length} parts · ${cfg.note || ''}`;
+
+// --- UI
+const list = document.getElementById('list');
+let solo = null;
+partObjs.forEach(o => {
+  const row = document.createElement('div'); row.className = 'part';
+  row.innerHTML = `<input type="checkbox" checked><span class="sw" style="background:#${o.userData.col.getHexString()}"></span><span class="n">${o.userData.label}</span><span class="f">${(o.userData.faces/1000).toFixed(1)}k</span>`;
+  const cb = row.querySelector('input');
+  cb.onclick = e => { e.stopPropagation(); o.visible = cb.checked; };
+  row.onclick = () => setSolo(solo === o ? null : o);
+  row.onmouseenter = () => hot(o, true); row.onmouseleave = () => hot(o, false);
+  o.userData.row = row; o.userData.cb = cb; list.append(row);
+});
+function setSolo(o) {
+  solo = o;
+  partObjs.forEach(p => { p.visible = !o || p === o; p.userData.cb.checked = p.visible; p.userData.row.classList.toggle('solo', p === o); });
+}
+const hotMat = new THREE.MeshStandardMaterial({ color:0xffa040, emissive:0x803000, roughness:.5 });
+function hot(o, on) {
+  o.userData.row.classList.toggle('hot', on);
+  o.traverse(m => { if (m.isMesh) m.material = on ? hotMat : (look === 'tex' ? m.userData.tex : colorMat(o)); });
+}
+const cmats = new Map();
+const colorMat = o => cmats.get(o) || (cmats.set(o, new THREE.MeshStandardMaterial({ color:o.userData.col, roughness:.6, metalness:.1 })), cmats.get(o));
+let look = 'tex';
+function setLook(l) { look = l; partObjs.forEach(o => o.traverse(m => { if (m.isMesh) m.material = l === 'tex' ? m.userData.tex : colorMat(o); })); }
+const ex = document.getElementById('explode'), exv = document.getElementById('exv');
+function explode() {
+  const t = ex.value / 100; exv.textContent = ex.value + '%';
+  partObjs.forEach(o => o.position.copy(o.userData.home).addScaledVector(o.userData.dir, t * 1.6));
+}
+ex.oninput = explode;
+document.querySelectorAll('#modeSeg button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#modeSeg button').forEach(x => x.classList.toggle('on', x === b));
+  const parts = b.dataset.m === 'parts';
+  partsRoot.visible = parts; wholeRoot.visible = !parts;
+});
+document.querySelectorAll('#lookSeg button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#lookSeg button').forEach(x => x.classList.toggle('on', x === b));
+  setLook(b.dataset.l);
+});
+document.getElementById('all').onclick = () => setSolo(null);
+const spinB = document.getElementById('spin');
+spinB.onclick = () => { controls.autoRotate = !controls.autoRotate; spinB.textContent = 'Spin: ' + (controls.autoRotate ? 'on' : 'off'); };
+
+// hover + click picking in the scene
+const ray = new THREE.Raycaster(), ptr = new THREE.Vector2(), tip = document.getElementById('tip');
+let hovered = null, downAt = null;
+renderer.domElement.addEventListener('pointermove', e => {
+  ptr.set(e.clientX/innerWidth*2-1, -(e.clientY/innerHeight)*2+1);
+  ray.setFromCamera(ptr, camera);
+  const hit = partsRoot.visible ? ray.intersectObjects(partObjs.filter(p => p.visible), true)[0] : null;
+  const o = hit ? hit.object.userData.part : null;
+  if (o !== hovered) { if (hovered) hot(hovered, false); hovered = o; if (o) hot(o, true); }
+  tip.style.display = o ? 'block' : 'none';
+  if (o) { tip.textContent = o.userData.label; tip.style.left = e.clientX+14+'px'; tip.style.top = e.clientY+10+'px'; }
+});
+renderer.domElement.addEventListener('pointerdown', e => downAt = [e.clientX, e.clientY]);
+renderer.domElement.addEventListener('pointerup', e => {
+  if (downAt && Math.hypot(e.clientX-downAt[0], e.clientY-downAt[1]) < 4 && hovered) setSolo(solo === hovered ? null : hovered);
+});
+
+addEventListener('resize', () => { camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+if (q.has('explode')) { ex.value = q.get('explode'); explode(); }
+if (q.get('look') === 'color') document.querySelector('[data-l=color]').click();
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+window.__ready = true;
+</script>
 </body>
-</html>

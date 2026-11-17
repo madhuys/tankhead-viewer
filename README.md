@@ -1,24 +1,7 @@
 # TankHead viewer
 
-3D viewer for the TankHead turret-headed robot: textured model, Bang-to-Parts splits, printable STL/3MF
+An original turret-headed robot, shown in a three.js viewer: the textured model, two Bang-to-Parts splits (7 and 14 parts) with an explode slider, and a printable 100 mm one-piece model (3MF / STL).
 
-A static site: plain HTML, CSS and JavaScript, no build step.
+Pipeline: Nano Banana Pro concept → Hyper3D Rodin textured model → Rodin Bang to Parts → manifold3d print repair.
 
-## Run
-
-```sh
-python3 -m http.server 8000 --bind 127.0.0.1
-```
-
-Then open http://127.0.0.1:8000/.
-
-## Test
-
-```sh
-python3 -m unittest discover -s tests
-```
-
-The test checks that every page parses and that every local link and asset it names exists.
-
-A static site has no server code, so it makes no AI calls (a key in a page would be anyone's): an app that needs
-chat, speech, pictures or embeddings is a FastAPI or Vite + React app (their READMEs list the calls).
+Static site: open `index.html` through any web server.

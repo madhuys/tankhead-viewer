@@ -1,0 +1,4 @@
+{"whole":"turret-whole.web.glb","sets":[
+{"id":"bang7","label":"Bang: 7 parts","note":"Rodin Bang to Parts, strength 7, textured","file":"turret-bang7.web.glb","labels":{"root0":"Turret head + torso","root1":"Pelvis + legs","root2":"Left arm","root3":"Right arm","root4":"Right shoulder pauldron","root5":"Left shoulder pauldron","root6":"Cannon barrel"}},
+{"id":"bang14","label":"Bang: 14 parts","note":"Rodin Bang to Parts, instructed split, textured","file":"turret-bang14.web.glb","labels":{"root7":"Turret head + cannon","root11":"Chest + shoulder armour","root6":"Waist + pelvis","root13":"Left upper arm","root12":"Left forearm + hand","root1":"Right upper arm","root0":"Right forearm + hand","root4":"Left leg","root3":"Right leg","root2":"Right foot","root5":"Left foot, toe","root8":"Left foot, heel","root9":"Left foot, ankle","root10":"Left foot, sole"}}
+]}
