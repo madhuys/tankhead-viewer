@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#16120f">
+<title>TankHead: rigged and animated</title>
+<style>
+  :root { --bg:#16120f; --panel:#211a15ee; --ink:#eadccb; --mute:#a08a74; --rust:#c8642a; --line:#3a2e25; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--ink); font:14px/1.4 ui-sans-serif,system-ui,sans-serif; overflow:hidden; }
+  canvas { display:block; touch-action:none; }
+  #ui { position:fixed; top:14px; left:14px; width:270px; background:var(--panel); border:1px solid var(--line);
+        border-radius:10px; padding:14px; backdrop-filter:blur(6px); }
+  h1 { font-size:16px; margin:0 0 2px; letter-spacing:.02em; }
+  .sub { color:var(--mute); font-size:12px; margin-bottom:12px; }
+  .sub a { color:var(--ink); }
+  #clips { display:grid; grid-template-columns:1fr 1fr; gap:4px; margin-bottom:12px; }
+  #clips button, .tools button { background:#2b221b; color:var(--ink); border:1px solid var(--line); border-radius:6px;
+        padding:7px 4px; cursor:pointer; font:inherit; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #clips button.on { background:var(--rust); border-color:var(--rust); color:#1a110a; font-weight:600; }
+  label.row { display:flex; justify-content:space-between; color:var(--mute); font-size:12px; margin-bottom:4px; }
+  input[type=range] { width:100%; accent-color:var(--rust); margin:0 0 10px; }
+  .tools { display:flex; gap:6px; }
+  .tools button { flex:1; }
+  #msg { position:fixed; inset:0; display:grid; place-items:center; color:var(--mute); pointer-events:none; text-align:center; }
+
+  /* phones: a short bottom bar of clip chips that scrolls sideways; the robot fills the rest */
+  @media (max-width:700px), (max-height:500px) and (pointer:coarse) {
+    html,body { height:100dvh; }
+    #ui { top:auto; left:0; right:0; bottom:0; width:auto; border-radius:14px 14px 0 0; border-width:1px 0 0;
+          padding:10px 12px calc(10px + env(safe-area-inset-bottom)); }
+    .sub { margin-bottom:8px; }
+    #clips { display:flex; overflow-x:auto; gap:6px; margin:0 -12px 8px; padding:0 12px; scrollbar-width:none; }
+    #clips::-webkit-scrollbar { display:none; }
+    #clips button { flex:none; padding:10px 14px; font-size:14px; border-radius:20px; }
+    .slider { display:none; }
+    .tools button { padding:10px 4px; font-size:13px; }
+  }
+</style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/jsm/" } }
+</script>
+</head>
+<body>
+<div id="ui">
+  <h1>TankHead robot, animated</h1>
+  <div class="sub">Rigged and animated with Meshy · <a href="./">parts viewer</a></div>
+  <div id="clips"></div>
+  <div class="slider"><label class="row"><span>Speed</span><span id="spv">1.0×</span></label>
+  <input type="range" id="speed" min="0.1" max="2" step="0.05" value="1"></div>
+  <div class="tools"><button id="pause">Pause</button><button id="skel">Skeleton: off</button></div>
+</div>
+<div id="msg">Loading…</div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { MeshoptDecoder } from './vendor/jsm/libs/meshopt_decoder.mjs';
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.shadowMap.enabled = true;
+document.body.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x16120f);
+scene.fog = new THREE.Fog(0x16120f, 8, 22);
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+const camera = new THREE.PerspectiveCamera(35, 1, 0.05, 100);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.target.set(0, 1, 0);
+
+scene.add(new THREE.HemisphereLight(0xfff1e0, 0x2a2018, 1.4));
+const sun = new THREE.DirectionalLight(0xffe2c4, 2.6);
+sun.position.set(3, 6, 4); sun.castShadow = true;
+sun.shadow.mapSize.setScalar(matchMedia('(pointer:coarse)').matches ? 1024 : 2048);
+Object.assign(sun.shadow.camera, { left: -3, right: 3, top: 3, bottom: -3, near: 0.5, far: 20 });
+scene.add(sun);
+const rim = new THREE.DirectionalLight(0xc8642a, 1.2); rim.position.set(-4, 3, -3); scene.add(rim);
+const floor = new THREE.Mesh(new THREE.CircleGeometry(12, 64), new THREE.MeshStandardMaterial({ color: 0x241c16, roughness: 1 }));
+floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+const grid = new THREE.GridHelper(24, 48, 0x3a2e25, 0x2b221b); grid.position.y = 0.002; scene.add(grid);
+
+// frame the robot in the space the panel leaves free
+const ui = document.getElementById('ui');
+const isSheet = () => getComputedStyle(ui).bottom === '0px' && ui.offsetWidth >= innerWidth - 2;
+let fitD = 0;
+function layout() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h);
+  const sh = isSheet() ? ui.offsetHeight : 0, fh = Math.max(h - sh, 1);
+  camera.aspect = w / fh;
+  if (sh) camera.setViewOffset(w, fh, 0, 0, w, h); else camera.clearViewOffset();
+  camera.updateProjectionMatrix();
+  const d = 6.2 * Math.max(1, 0.9 / camera.aspect);
+  if (fitD) camera.position.sub(controls.target).multiplyScalar(d / fitD).add(controls.target);
+  fitD = d;
+}
+layout();
+camera.position.set(2.2, 0.9, 4).setLength(fitD).add(controls.target);
+addEventListener('resize', layout);
+new ResizeObserver(layout).observe(ui);
+
+// the walking/running clips move the root forward; keep the robot on the spot
+const nice = n => {
+  const parts = n.split('|').filter(p => p && !/^(armature|baselayer|clip\d*)$/i.test(p));
+  const s = (parts.pop() || 'Pose').replace(/_/g, ' ').replace(/\s+\d+$/, '').trim();
+  return s.charAt(0).toUpperCase() + s.slice(1);
+};
+let mixer, actions = [], current, skel;
+const msg = document.getElementById('msg');
+
+new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load('tankhead-animated.glb', gltf => {
+  const model = gltf.scene;
+  model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
+  const box = new THREE.Box3().setFromObject(model);
+  const s = 2 / (box.max.y - box.min.y);
+  model.scale.setScalar(s);
+  box.setFromObject(model);
+  model.position.y -= box.min.y;
+  scene.add(model);
+
+  skel = new THREE.SkeletonHelper(model); skel.visible = false; scene.add(skel);
+  mixer = new THREE.AnimationMixer(model);
+  const box2 = document.getElementById('clips');
+  gltf.animations.forEach((clip, i) => {
+    // strip root-motion translation on the hips so loops stay in place
+    for (const t of clip.tracks) if (/hips?\.position$/i.test(t.name)) {
+      const v = t.values, x0 = v[0], z0 = v[2];
+      for (let k = 0; k < v.length; k += 3) { v[k] = x0; v[k + 2] = z0; }
+    }
+    const a = mixer.clipAction(clip); actions.push(a);
+    const b = document.createElement('button'); b.textContent = nice(clip.name); b.title = clip.name;
+    b.onclick = () => play(i); box2.append(b);
+  });
+  msg.remove();
+  layout();
+  play(Math.max(0, gltf.animations.findIndex(c => /idle/i.test(c.name))));
+}, e => { if (e.total) msg.textContent = `Loading… ${Math.round(100 * e.loaded / e.total)}%`; },
+   err => { msg.textContent = 'Could not load the model.'; console.error(err); });
+
+function play(i) {
+  const next = actions[i];
+  if (current && current !== next) { next.reset().play(); current.crossFadeTo(next, 0.35, false); }
+  else next.reset().play();
+  current = next;
+  document.querySelectorAll('#clips button').forEach((b, k) => b.classList.toggle('on', k === i));
+}
+
+let speed = 1, paused = false;
+const sp = document.getElementById('speed');
+sp.oninput = () => { speed = +sp.value; document.getElementById('spv').textContent = speed.toFixed(1) + '×'; };
+const pb = document.getElementById('pause');
+pb.onclick = () => { paused = !paused; pb.textContent = paused ? 'Play' : 'Pause'; };
+const sk = document.getElementById('skel');
+sk.onclick = () => { if (!skel) return; skel.visible = !skel.visible; sk.textContent = 'Skeleton: ' + (skel.visible ? 'on' : 'off'); };
+
+const timer = new THREE.Timer();
+renderer.setAnimationLoop(t => {
+  timer.update(t); const dt = timer.getDelta();
+  if (mixer && !paused) mixer.update(dt * speed);
+  controls.update();
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
