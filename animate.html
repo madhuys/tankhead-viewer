@@ -50,6 +50,7 @@
   <div class="slider"><label class="row"><span>Speed</span><span id="spv">1.0×</span></label>
   <input type="range" id="speed" min="0.1" max="2" step="0.05" value="1"></div>
   <div class="tools"><button id="pause">Pause</button><button id="skel">Skeleton: off</button></div>
+  <div class="tools" style="margin-top:6px"><button id="skin" title="Meshy's smooth skin, or a Blender pass that stiffens the armour (2 bones per vertex, sharpened)">Skin: smooth</button></div>
 </div>
 <div id="msg">Loading…</div>
 <script type="module">
@@ -115,7 +116,11 @@ const nice = n => {
 let mixer, actions = [], current, skel;
 const msg = document.getElementById('msg');
 
-new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load('tankhead-animated.glb', gltf => {
+const rigid = new URLSearchParams(location.search).get('skin') === 'hard';
+const skb = document.getElementById('skin');
+skb.textContent = 'Skin: ' + (rigid ? 'hard-surface' : 'smooth');
+skb.onclick = () => { const u = new URL(location); if (rigid) u.searchParams.delete('skin'); else u.searchParams.set('skin', 'hard'); location = u; };
+new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(rigid ? 'tankhead-rigid.glb' : 'tankhead-animated.glb', gltf => {
   const model = gltf.scene;
   model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
   const box = new THREE.Box3().setFromObject(model);
