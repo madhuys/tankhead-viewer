@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#16120f">
+<title>TankHead: walk test</title>
+<style>
+  :root { --bg:#16120f; --panel:#211a15ee; --ink:#eadccb; --mute:#a08a74; --rust:#c8642a; --line:#3a2e25; --ok:#8fb36a; --bad:#d9573b; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--ink); font:13px/1.4 ui-sans-serif,system-ui,sans-serif; overflow:hidden; }
+  canvas#gl { display:block; touch-action:none; }
+  .panel { position:fixed; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px; backdrop-filter:blur(6px); }
+  #ui { top:14px; left:14px; width:250px; }
+  #kin { top:14px; right:14px; width:270px; }
+  h1 { font-size:15px; margin:0 0 2px; }
+  h2 { font-size:12px; margin:10px 0 4px; color:var(--mute); font-weight:600; text-transform:uppercase; letter-spacing:.06em; }
+  .sub { color:var(--mute); font-size:12px; margin-bottom:8px; }
+  .sub a { color:var(--ink); }
+  kbd { background:#2b221b; border:1px solid var(--line); border-radius:4px; padding:0 4px; font:11px ui-monospace,monospace; }
+  .keys { color:var(--mute); font-size:12px; line-height:1.9; }
+  button { background:#2b221b; color:var(--ink); border:1px solid var(--line); border-radius:6px; padding:6px 4px; cursor:pointer; font:inherit; font-size:12px; }
+  button.on { background:var(--rust); border-color:var(--rust); color:#1a110a; font-weight:600; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:4px; }
+  label.row { display:flex; justify-content:space-between; color:var(--mute); font-size:12px; margin:6px 0 2px; }
+  input[type=range] { width:100%; accent-color:var(--rust); margin:0; }
+  table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+  td { padding:2px 0; } td:last-child { text-align:right; font-family:ui-monospace,monospace; }
+  td:first-child { color:var(--mute); }
+  .good { color:var(--ok); } .warn { color:var(--bad); }
+  #chart { width:100%; height:90px; display:block; background:#1a1410; border:1px solid var(--line); border-radius:6px; }
+  .legend { display:flex; gap:10px; font-size:11px; color:var(--mute); margin-top:3px; }
+  .legend i { display:inline-block; width:10px; height:3px; vertical-align:middle; margin-right:4px; }
+  #msg { position:fixed; inset:0; display:grid; place-items:center; color:var(--mute); pointer-events:none; }
+  #stick { position:fixed; left:24px; bottom:24px; width:120px; height:120px; border-radius:50%; border:2px solid #ffffff33; background:#00000033; display:none; touch-action:none; }
+  #nub { position:absolute; left:40px; top:40px; width:40px; height:40px; border-radius:50%; background:#c8642acc; }
+  #runbtn { position:fixed; left:160px; bottom:40px; display:none; padding:14px 18px; border-radius:30px; }
+  @media (pointer:coarse) { #stick, #runbtn { display:block; } .keys { display:none; } }
+  @media (max-width:760px) {
+    #ui { width:auto; right:14px; } #kin { top:auto; bottom:160px; left:auto; width:220px; padding:8px; }
+    #kin .chartbox, #kin h2.hide-sm { display:none; }
+  }
+</style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/jsm/" } }
+</script>
+</head>
+<body>
+<div id="ui" class="panel">
+  <h1>TankHead walk test</h1>
+  <div class="sub">Drive it around and watch the joints · <a href="animate.html">animations</a> · <a href="index.html">parts</a></div>
+  <div class="keys">
+    <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrows: walk (camera-relative)<br>
+    <kbd>Shift</kbd> run · <kbd>Ctrl</kbd> creep · drag: orbit · wheel: zoom<br>
+    <kbd>1</kbd>–<kbd>6</kbd> moves · <kbd>P</kbd> pause · <kbd>.</kbd> step frame
+  </div>
+  <h2>Moves</h2>
+  <div class="grid2" id="emotes"></div>
+  <label class="row"><span>Time scale</span><span id="tsv">1.0×</span></label>
+  <input type="range" id="ts" min="0.05" max="1.5" step="0.05" value="1">
+  <h2>Show</h2>
+  <div class="grid2">
+    <button id="bSkel">Skeleton</button><button id="bPrints" class="on">Footprints</button>
+    <button id="bSync" class="on" title="Scale the walk/run playback to the ground speed so the feet do not slide">Foot sync</button><button id="bSkin">Skin: parts</button>
+  </div>
+</div>
+
+<div id="kin" class="panel">
+  <h2 style="margin-top:0">Motion</h2>
+  <table>
+    <tr><td>Gait</td><td id="kGait">idle</td></tr>
+    <tr><td>Ground speed</td><td id="kSpeed">0.00 m/s</td></tr>
+    <tr><td>Heading</td><td id="kHead">0°</td></tr>
+    <tr><td>Distance</td><td id="kDist">0.0 m</td></tr>
+    <tr><td>Cadence</td><td id="kCad">–</td></tr>
+    <tr><td>Stride length</td><td id="kStride">–</td></tr>
+    <tr><td>Foot slip (planted)</td><td id="kSlip">–</td></tr>
+    <tr><td>Clip speed walk / run</td><td id="kNat">–</td></tr>
+  </table>
+  <h2>Joints (flexion)</h2>
+  <table>
+    <tr><td>Knee L / R</td><td id="jKnee">–</td></tr>
+    <tr><td>Hip L / R</td><td id="jHip">–</td></tr>
+    <tr><td>Elbow L / R</td><td id="jElbow">–</td></tr>
+    <tr><td>Spine lean</td><td id="jSpine">–</td></tr>
+  </table>
+  <div class="chartbox">
+    <h2>Knee angle, last 4 s</h2>
+    <canvas id="chart" width="540" height="180"></canvas>
+    <div class="legend"><span><i style="background:#c8642a"></i>left knee</span><span><i style="background:#7fb0d9"></i>right knee</span><span><i style="background:#8fb36a"></i>foot down</span></div>
+  </div>
+  <div class="sub" style="margin:6px 0 0">Robot scaled to 2.0 m tall.</div>
+</div>
+
+<div id="stick"><div id="nub"></div></div>
+<button id="runbtn">Run</button>
+<div id="msg">Loading…</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { MeshoptDecoder } from './vendor/jsm/libs/meshopt_decoder.mjs';
+
+const $ = id => document.getElementById(id);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.domElement.id = 'gl';
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.shadowMap.enabled = true;
+document.body.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x16120f);
+scene.fog = new THREE.Fog(0x16120f, 18, 60);
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+const camera = new THREE.PerspectiveCamera(40, 1, 0.05, 200);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.enablePan = false;
+controls.minDistance = 2; controls.maxDistance = 25; controls.maxPolarAngle = Math.PI * 0.49;
+controls.target.set(0, 1, 0);
+camera.position.set(3.5, 2.4, 6);
+
+scene.add(new THREE.HemisphereLight(0xfff1e0, 0x2a2018, 1.4));
+const sun = new THREE.DirectionalLight(0xffe2c4, 2.6);
+sun.castShadow = true; sun.shadow.mapSize.setScalar(2048);
+Object.assign(sun.shadow.camera, { left: -5, right: 5, top: 5, bottom: -5, near: 0.5, far: 30 });
+scene.add(sun, sun.target);
+const rim = new THREE.DirectionalLight(0xc8642a, 1.2); rim.position.set(-4, 3, -3); scene.add(rim);
+
+// the yard: floor, 1 m grid, metre ticks along the axes, a few crates to walk around
+const ARENA = 40;
+const floor = new THREE.Mesh(new THREE.CircleGeometry(ARENA + 4, 96), new THREE.MeshStandardMaterial({ color: 0x241c16, roughness: 1 }));
+floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+const g1 = new THREE.GridHelper(ARENA * 2, ARENA * 2, 0x3a2e25, 0x2b221b); g1.position.y = 0.002; scene.add(g1);
+const g5 = new THREE.GridHelper(ARENA * 2, ARENA * 2 / 5, 0x5a4636, 0x5a4636); g5.position.y = 0.003; scene.add(g5);
+const crateMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2e, roughness: 0.8 });
+const obstacles = [];
+[[4, -3, 1.2], [-5, -6, 1.6], [7, 6, 1], [-8, 4, 2], [0, -11, 1.4], [12, -2, 1.2], [-13, -10, 1.8], [3, 13, 1.5]].forEach(([x, z, s]) => {
+  const c = new THREE.Mesh(new THREE.BoxGeometry(s, s, s), crateMat);
+  c.position.set(x, s / 2, z); c.rotation.y = (x * 7 + z) % 3; c.castShadow = c.receiveShadow = true; scene.add(c);
+  obstacles.push({ x, z, r: s * 0.72 });
+});
+const ring = new THREE.Mesh(new THREE.RingGeometry(ARENA - 0.1, ARENA, 128), new THREE.MeshBasicMaterial({ color: 0xc8642a }));
+ring.rotation.x = -Math.PI / 2; ring.position.y = 0.004; scene.add(ring);
+
+function layout() {
+  renderer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+}
+layout(); addEventListener('resize', layout);
+
+// ---------- model ----------
+const SKINS = { parts: ['parts', 'tankhead-parts.glb'], smooth: ['smooth', 'tankhead-animated.glb'], hard: ['hard', 'tankhead-rigid.glb'] };
+const ORDER = ['parts', 'smooth', 'hard'];
+let skin = new URLSearchParams(location.search).get('skin'); if (!SKINS[skin]) skin = 'parts';
+$('bSkin').textContent = 'Skin: ' + SKINS[skin][0];
+$('bSkin').onclick = () => { const u = new URL(location); const n = ORDER[(ORDER.indexOf(skin) + 1) % 3]; if (n === 'parts') u.searchParams.delete('skin'); else u.searchParams.set('skin', n); location = u; };
+
+const rig = new THREE.Group(); scene.add(rig);   // moves and turns in the world; the model inside plays in place
+let model, mixer, skel, B = {}, A = {}, nat = { walk: 1.2, run: 3.2 }, yawOffset = 0, gaitInfo = {}, domGait = 'Walk';
+const EMOTES = [['Angry_Stomp', 'Stomp'], ['Big_Wave_Hello', 'Wave'], ['Boom_Dance', 'Dance'], ['Combat_Stance', 'Combat'], ['Punch_Combo', 'Punch'], ['Victory_Cheer', 'Cheer']];
+let emote = null;
+
+new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(SKINS[skin][1], gltf => {
+  model = gltf.scene;
+  model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
+  const box = new THREE.Box3().setFromObject(model);
+  model.scale.setScalar(2 / (box.max.y - box.min.y));
+  box.setFromObject(model); model.position.y -= box.min.y;
+  rig.add(model);
+  for (const n of ['Hips', 'Spine', 'Spine02', 'neck', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'LeftToeBase', 'RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase', 'LeftArm', 'LeftForeArm', 'LeftHand', 'RightArm', 'RightForeArm', 'RightHand'])
+    B[n] = model.getObjectByName(n);
+  skel = new THREE.SkeletonHelper(model); skel.visible = false; scene.add(skel);
+  mixer = new THREE.AnimationMixer(model);
+  const clip = n => gltf.animations.find(c => c.name.toLowerCase().includes(n.toLowerCase()));
+
+  // the walk and run clips play on the spot, so read their ground speed off the feet: while a foot is
+  // planted it slides backwards under the body at exactly the speed the robot should travel
+  for (const g of ['Walk', 'Run']) {
+    const c = clip(g); if (!c || !B.LeftFoot) continue;
+    const a = mixer.clipAction(c); a.play();
+    const N = 120, dtS = c.duration / N, P = { L: [], R: [] };
+    for (let i = 0; i <= N; i++) {
+      mixer.setTime(i * dtS); model.updateMatrixWorld(true);
+      P.L.push(B.LeftFoot.getWorldPosition(new THREE.Vector3()));
+      P.R.push(B.RightFoot.getWorldPosition(new THREE.Vector3()));
+    }
+    a.stop(); mixer.setTime(0);
+    const plant = {}, vel = new THREE.Vector2(); let nv = 0;
+    for (const k of ['L', 'R']) {
+      const ys = P[k].map(p => p.y), lo = Math.min(...ys), hi = Math.max(...ys);
+      plant[k] = ys.map(y => y < lo + (hi - lo) * 0.08);
+      for (let i = 0; i < N; i++) if (plant[k][i] && plant[k][i + 1]) {
+        vel.x += (P[k][i + 1].x - P[k][i].x) / dtS; vel.y += (P[k][i + 1].z - P[k][i].z) / dtS; nv++;
+      }
+    }
+    // footfall phases: where each foot's planted run begins
+    const onset = {};
+    for (const k of ['L', 'R']) onset[k] = plant[k].map((p, i) => i < N && p && !plant[k][(i - 1 + N) % N] ? i / N : -1).filter(x => x >= 0);
+    gaitInfo[g] = { plant, N, onset };
+    if (nv) {
+      vel.divideScalar(nv);
+      if (vel.length() > 0.2) {
+        nat[g.toLowerCase()] = vel.length();
+        gaitInfo[g].yaw = Math.atan2(-vel.x, -vel.y);
+        if (g === 'Walk') yawOffset = Math.atan2(-vel.x, -vel.y);   // the body moves opposite to the planted foot
+      }
+    }
+  }
+  // then strip the root travel so the clips play on the spot; the rig does the travelling
+  for (const c of gltf.animations) for (const t of c.tracks) if (/hips?\.position$/i.test(t.name)) {
+    const v = t.values, x0 = v[0], z0 = v[2];
+    for (let k = 0; k < v.length; k += 3) { v[k] = x0; v[k + 2] = z0; }
+  }
+  for (const n of ['Idle', 'Walk', 'Run']) { const c = clip(n); if (c) { A[n] = mixer.clipAction(c); A[n].play(); A[n].setEffectiveWeight(n === 'Idle' ? 1 : 0); } }
+  // walk and run share a gait phase: start them together
+  EMOTES.forEach(([n, label], i) => {
+    const c = clip(n); if (!c) return;
+    const a = mixer.clipAction(c); a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; A[n] = a;
+    const b = document.createElement('button'); b.textContent = `${i + 1} ${label}`; b.onclick = () => startEmote(n); $('emotes').append(b);
+  });
+  mixer.addEventListener('finished', e => { if (emote && e.action === A[emote]) endEmote(); });
+  $('kNat').textContent = `${nat.walk.toFixed(2)} / ${nat.run.toFixed(2)} m/s`;
+  $('msg').remove();
+}, e => { if (e.total) $('msg').textContent = `Loading… ${Math.round(100 * e.loaded / e.total)}%`; },
+   err => { $('msg').textContent = 'Could not load the model.'; console.error(err); });
+
+function startEmote(n) {
+  if (!A[n]) return;
+  if (emote && emote !== n) A[emote].fadeOut(0.2);
+  emote = n; A[n].reset().setEffectiveWeight(1).fadeIn(0.25).play();
+  document.querySelectorAll('#emotes button').forEach(b => b.classList.toggle('on', b.textContent.includes(EMOTES.find(e => e[0] === n)[1])));
+}
+function endEmote() {
+  if (!emote) return;
+  A[emote].fadeOut(0.3); emote = null;
+  document.querySelectorAll('#emotes button').forEach(b => b.classList.remove('on'));
+}
+
+// ---------- input ----------
+const keys = new Set();
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  keys.add(e.code);
+  if (/^Digit[1-6]$/.test(e.code)) startEmote(EMOTES[+e.code.slice(5) - 1][0]);
+  if (e.code === 'KeyP') togglePause();
+  if (e.code === 'Period') stepOnce = true;
+  if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
+});
+addEventListener('keyup', e => keys.delete(e.code));
+addEventListener('blur', () => keys.clear());
+const stick = { x: 0, y: 0, run: false };
+{
+  const el = $('stick'), nub = $('nub'); let id = null;
+  const move = e => { const r = el.getBoundingClientRect(); let x = (e.clientX - r.left - 60) / 50, y = (e.clientY - r.top - 60) / 50; const l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; }
+    stick.x = x; stick.y = y; nub.style.transform = `translate(${x * 40}px,${y * 40}px)`; };
+  el.onpointerdown = e => { id = e.pointerId; el.setPointerCapture(id); move(e); };
+  el.onpointermove = e => { if (e.pointerId === id) move(e); };
+  el.onpointerup = el.onpointercancel = () => { id = null; stick.x = stick.y = 0; nub.style.transform = ''; };
+  $('runbtn').onpointerdown = () => { stick.run = !stick.run; $('runbtn').classList.toggle('on', stick.run); };
+}
+
+let paused = false, stepOnce = false, timeScale = 1, footSync = true, prints = true;
+function togglePause() { paused = !paused; }
+$('ts').oninput = e => { timeScale = +e.target.value; $('tsv').textContent = timeScale.toFixed(2) + '×'; };
+$('bSkel').onclick = e => { if (!skel) return; skel.visible = !skel.visible; e.target.classList.toggle('on', skel.visible); };
+$('bPrints').onclick = e => { prints = !prints; e.target.classList.toggle('on', prints); printGroup.visible = prints; };
+$('bSync').onclick = e => { footSync = !footSync; e.target.classList.toggle('on', footSync); };
+
+// ---------- locomotion ----------
+let speed = 0, heading = 0, dist = 0;
+const pos = new THREE.Vector3();
+const lastRig = new THREE.Vector3();
+function wishDir() {
+  let x = 0, z = 0;
+  if (keys.has('KeyW') || keys.has('ArrowUp')) z -= 1;
+  if (keys.has('KeyS') || keys.has('ArrowDown')) z += 1;
+  if (keys.has('KeyA') || keys.has('ArrowLeft')) x -= 1;
+  if (keys.has('KeyD') || keys.has('ArrowRight')) x += 1;
+  x += stick.x; z += stick.y;
+  const l = Math.hypot(x, z); if (l < 0.15) return null;
+  // camera-relative
+  const camYaw = Math.atan2(camera.position.x - controls.target.x, camera.position.z - controls.target.z);
+  const c = Math.cos(camYaw), s = Math.sin(camYaw);
+  return { x: (x * c + z * s) / Math.max(l, 1), z: (-x * s + z * c) / Math.max(l, 1), mag: Math.min(l, 1) };
+}
+const angDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
+
+function locomote(dt) {
+  const w = emote ? null : wishDir();
+  const running = keys.has('ShiftLeft') || keys.has('ShiftRight') || stick.run;
+  const creep = keys.has('ControlLeft') || keys.has('ControlRight');
+  const target = w ? (running ? nat.run : creep ? nat.walk * 0.45 : nat.walk) * w.mag : 0;
+  const accel = target > speed ? 2.5 : 4.5;   // m/s²
+  speed += Math.sign(target - speed) * Math.min(Math.abs(target - speed), accel * dt);
+  if (w) {
+    const want = Math.atan2(w.x, w.z);
+    const turnRate = THREE.MathUtils.lerp(7, 3.5, Math.min(speed / nat.run, 1));   // rad/s, slower turns at speed
+    const d = angDiff(want, heading);
+    heading += Math.sign(d) * Math.min(Math.abs(d), turnRate * dt);
+  }
+  const before = pos.clone();
+  pos.x += Math.sin(heading) * speed * dt; pos.z += Math.cos(heading) * speed * dt;
+  // crates and the arena edge push back
+  for (const o of obstacles) { const dx = pos.x - o.x, dz = pos.z - o.z, l = Math.hypot(dx, dz), m = o.r + 0.45;
+    if (l < m && l > 1e-4) { pos.x = o.x + dx / l * m; pos.z = o.z + dz / l * m; } }
+  const r = Math.hypot(pos.x, pos.z); if (r > ARENA - 0.6) pos.multiplyScalar((ARENA - 0.6) / r);
+  // blocked: the legs slow to what the body really manages (sliding along a crate keeps the along-part)
+  if (dt > 0) { const fwd = ((pos.x - before.x) * Math.sin(heading) + (pos.z - before.z) * Math.cos(heading)) / dt;
+    if (fwd < speed - 0.05) speed = Math.max(fwd, 0); }
+  rig.position.copy(pos); rig.rotation.y = heading - yawOffset;
+
+  // blend idle / walk / run by speed and keep the feet matched to the ground
+  if (!A.Idle) return;
+  const wk = nat.walk, rn = nat.run;
+  let wi, ww, wr;
+  if (speed <= wk) { const t = speed / wk; wi = 1 - t; ww = t; wr = 0; }
+  else { const t = Math.min((speed - wk) / (rn - wk), 1); wi = 0; ww = 1 - t; wr = t; }
+  const locoW = emote ? 0 : 1;
+  A.Idle.setEffectiveWeight(wi * locoW);
+  if (A.Walk) { A.Walk.setEffectiveWeight(ww * locoW); A.Walk.timeScale = footSync ? THREE.MathUtils.clamp(speed / wk, 0.35, 1.8) : 1; }
+  if (A.Run)  { A.Run.setEffectiveWeight(wr * locoW);  A.Run.timeScale  = footSync ? THREE.MathUtils.clamp(speed / rn, 0.5, 1.6) : 1; }
+  // walk and run loops of different lengths: keep their phase aligned so the blend does not stumble
+  domGait = wr > ww ? 'Run' : 'Walk';
+  if (A.Walk && A.Run && ww > 0 && wr > 0) {
+    const dom = ww >= wr ? A.Walk : A.Run, sub = dom === A.Walk ? A.Run : A.Walk;
+    sub.time = (dom.time / dom.getClip().duration) * sub.getClip().duration;
+  }
+}
+
+// ---------- kinematics ----------
+const V = () => new THREE.Vector3();
+const wp = (b, v) => b ? b.getWorldPosition(v) : v.set(0, 0, 0);
+const tmp = [V(), V(), V(), V()];
+function flex(a, b, c) {   // angle between segment a→b and b→c, degrees (0 = straight)
+  wp(B[a], tmp[0]); wp(B[b], tmp[1]); wp(B[c], tmp[2]);
+  const u = tmp[1].clone().sub(tmp[0]).normalize(), v = tmp[2].clone().sub(tmp[1]).normalize();
+  return THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(u.dot(v), -1, 1)));
+}
+function hipFlex(up, low) {   // thigh angle forward from the trunk's down axis, in the walking plane
+  wp(B[up], tmp[0]); wp(B[low], tmp[1]); wp(B.Spine02 || B.Spine, tmp[2]); wp(B.Hips, tmp[3]);
+  const thigh = tmp[1].clone().sub(tmp[0]).normalize(), down = tmp[3].clone().sub(tmp[2]).normalize();
+  const fwd = new THREE.Vector3(Math.sin(heading), 0, Math.cos(heading));
+  const a = THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(thigh.dot(down), -1, 1)));
+  return thigh.dot(fwd) >= down.dot(fwd) ? a : -a;
+}
+function spineLean() {
+  wp(B.Hips, tmp[0]); wp(B.neck || B.Spine02, tmp[1]);
+  const v = tmp[1].sub(tmp[0]).normalize();
+  const fwd = new THREE.Vector3(Math.sin(heading), 0, Math.cos(heading));
+  return THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(v.dot(fwd), -1, 1)));
+}
+
+// foot contact: read from the gait clip's phase (each foot's planted frames were found at load)
+const feet = { L: { ank: 'LeftFoot', prev: V(), down: false, strikes: [] },
+               R: { ank: 'RightFoot', prev: V(), down: false, strikes: [] } };
+const printGroup = new THREE.Group(); scene.add(printGroup);
+const printGeo = new THREE.CircleGeometry(0.09, 16).rotateX(-Math.PI / 2);
+const printMat = { L: new THREE.MeshBasicMaterial({ color: 0xc8642a, transparent: true, opacity: 0.8 }), R: new THREE.MeshBasicMaterial({ color: 0x7fb0d9, transparent: true, opacity: 0.8 }) };
+let slipSum = 0, slipN = 0, slipShow = 0, simT = 0;
+const hist = [];   // [t, kneeL, kneeR, downL, downR]
+function feetUpdate(dt) {
+  for (const k of ['L', 'R']) {
+    const f = feet[k], p = V();
+    wp(B[f.ank], p);
+    const gi = gaitInfo[domGait], act = A[domGait];
+    const down = !emote && speed > 0.15 && gi && act
+      ? gi.plant[k][Math.round((act.time / act.getClip().duration) * gi.N) % (gi.N + 1)] : speed <= 0.15 && !emote;
+    // a footfall is the gait phase crossing that foot's planted onset (works at any frame rate)
+    const ph = gi && act ? act.time / act.getClip().duration : 0, lp = f.phase ?? ph; f.phase = ph;
+    const crossed = !emote && speed > 0.15 && gi && gi.onset[k].some(o => lp <= ph ? (o > lp && o <= ph) : (o > lp || o <= ph));
+    if (crossed) {
+      f.strikes.push(simT); if (f.strikes.length > 8) f.strikes.shift();
+      if (prints) { const m = new THREE.Mesh(printGeo, printMat[k]); m.position.set(p.x, 0.006, p.z); printGroup.add(m); if (printGroup.children.length > 80) printGroup.remove(printGroup.children[0]); }
+    }
+    if (down && f.down && dt > 0) { slipSum += Math.hypot(p.x - f.prev.x, p.z - f.prev.z) / dt; slipN++; }
+    f.down = down; f.prev.copy(p);
+  }
+}
+
+const chart = $('chart'), cx = chart.getContext('2d');
+function drawChart() {
+  const W = chart.width, H = chart.height; cx.clearRect(0, 0, W, H);
+  const t1 = simT, t0 = t1 - 4, y = a => H - 8 - (a / 140) * (H - 16);
+  cx.strokeStyle = '#3a2e25'; cx.lineWidth = 1;
+  for (const a of [0, 45, 90, 135]) { cx.beginPath(); cx.moveTo(0, y(a)); cx.lineTo(W, y(a)); cx.stroke(); cx.fillStyle = '#6b5846'; cx.font = '18px sans-serif'; cx.fillText(a + '°', 4, y(a) - 3); }
+  for (const [k, row] of [['L', 3], ['R', 4]]) {
+    cx.fillStyle = '#8fb36a55';
+    for (const h of hist) if (h[row]) cx.fillRect((h[0] - t0) / 4 * W, row === 3 ? H - 6 : H - 3, 3, 3);
+  }
+  for (const [i, col] of [[1, '#c8642a'], [2, '#7fb0d9']]) {
+    cx.strokeStyle = col; cx.lineWidth = 3; cx.beginPath();
+    hist.forEach((h, j) => { const x = (h[0] - t0) / 4 * W; j ? cx.lineTo(x, y(h[i])) : cx.moveTo(x, y(h[i])); });
+    cx.stroke();
+  }
+}
+
+const fmt = (a, b) => `${a.toFixed(0)}° / ${b.toFixed(0)}°`;
+let uiT = 0;
+function kinematics(dt) {
+  if (!B.Hips) return;
+  model.updateMatrixWorld(true);
+  feetUpdate(dt);
+  const kL = flex('LeftUpLeg', 'LeftLeg', 'LeftFoot'), kR = flex('RightUpLeg', 'RightLeg', 'RightFoot');
+  hist.push([simT, kL, kR, feet.L.down, feet.R.down]);
+  while (hist.length && hist[0][0] < simT - 4) hist.shift();
+  uiT += dt; if (uiT < 0.1) return; uiT = 0;
+  const gait = emote ? EMOTES.find(e => e[0] === emote)[1].toLowerCase() : speed < 0.05 ? 'idle' : speed <= nat.walk * 1.05 ? 'walk' : speed < nat.run * 0.95 ? 'walk → run' : 'run';
+  $('kGait').textContent = gait;
+  $('kSpeed').textContent = speed.toFixed(2) + ' m/s';
+  $('kHead').textContent = ((THREE.MathUtils.radToDeg(heading) % 360 + 360) % 360).toFixed(0) + '°';
+  $('kDist').textContent = dist.toFixed(1) + ' m';
+  const all = [...feet.L.strikes, ...feet.R.strikes].filter(t => t > simT - 3).sort((a, b) => a - b);
+  if (speed > 0.15 && all.length >= 3) {
+    const stepsPerS = (all.length - 1) / (all[all.length - 1] - all[0]);
+    $('kCad').textContent = (stepsPerS * 60).toFixed(0) + ' steps/min';
+    $('kStride').textContent = (2 * speed / stepsPerS).toFixed(2) + ' m';
+  } else { $('kCad').textContent = '–'; $('kStride').textContent = '–'; }
+  if (slipN) { slipShow = slipSum / slipN; slipSum = 0; slipN = 0; }
+  const sl = $('kSlip');
+  if (speed > 0.15) { sl.textContent = slipShow.toFixed(2) + ' m/s'; sl.className = slipShow < 0.25 ? 'good' : 'warn'; } else { sl.textContent = '–'; sl.className = ''; }
+  $('jKnee').textContent = fmt(kL, kR);
+  $('jHip').textContent = fmt(hipFlex('LeftUpLeg', 'LeftLeg'), hipFlex('RightUpLeg', 'RightLeg'));
+  $('jElbow').textContent = fmt(flex('LeftArm', 'LeftForeArm', 'LeftHand'), flex('RightArm', 'RightForeArm', 'RightHand'));
+  $('jSpine').textContent = spineLean().toFixed(0) + '° fwd';
+  drawChart();
+}
+
+// ---------- loop ----------
+const timer = new THREE.Timer();
+renderer.setAnimationLoop(t => {
+  timer.update(t);
+  let dt = Math.min(timer.getDelta(), 0.05);
+  if (paused && !stepOnce) dt = 0; else if (paused) dt = 1 / 60;
+  stepOnce = false;
+  dt *= timeScale;
+  if (mixer && dt > 0) {
+    lastRig.copy(pos);
+    locomote(dt);
+    dist += lastRig.distanceTo(pos);
+    mixer.update(dt);
+    simT += dt;
+    kinematics(dt);
+  }
+  // the camera follows the robot, keeping its orbit offset
+  const tgt = new THREE.Vector3(pos.x, 1.1, pos.z), delta = tgt.clone().sub(controls.target);
+  controls.target.add(delta); camera.position.add(delta);
+  sun.position.set(pos.x + 3, 8, pos.z + 4); sun.target.position.copy(pos);
+  controls.update();
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
