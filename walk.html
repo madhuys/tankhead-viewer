@@ -61,7 +61,7 @@
   <h2>Show</h2>
   <div class="grid2">
     <button id="bSkel">Skeleton</button><button id="bPrints" class="on">Footprints</button>
-    <button id="bSync" class="on" title="Scale the walk/run playback to the ground speed so the feet do not slide">Foot sync</button><button id="bSkin">Skin: parts</button>
+    <button id="bSync" class="on" title="Scale the walk/run playback to the ground speed so the feet do not slide">Foot sync</button><button id="bSkin">Skin: joints</button>
   </div>
 </div>
 
@@ -153,11 +153,11 @@ function layout() {
 layout(); addEventListener('resize', layout);
 
 // ---------- model ----------
-const SKINS = { parts: ['parts', 'tankhead-parts.glb'], smooth: ['smooth', 'tankhead-animated.glb'], hard: ['hard', 'tankhead-rigid.glb'] };
-const ORDER = ['parts', 'smooth', 'hard'];
-let skin = new URLSearchParams(location.search).get('skin'); if (!SKINS[skin]) skin = 'parts';
+const SKINS = { joints: ['joints', 'tankhead-joints.glb'], parts: ['parts', 'tankhead-parts.glb'], smooth: ['smooth', 'tankhead-animated.glb'], hard: ['hard', 'tankhead-rigid.glb'] };
+const ORDER = ['joints', 'parts', 'smooth', 'hard'];
+let skin = new URLSearchParams(location.search).get('skin'); if (!SKINS[skin]) skin = 'joints';
 $('bSkin').textContent = 'Skin: ' + SKINS[skin][0];
-$('bSkin').onclick = () => { const u = new URL(location); const n = ORDER[(ORDER.indexOf(skin) + 1) % 3]; if (n === 'parts') u.searchParams.delete('skin'); else u.searchParams.set('skin', n); location = u; };
+$('bSkin').onclick = () => { const u = new URL(location); const n = ORDER[(ORDER.indexOf(skin) + 1) % 4]; if (n === 'joints') u.searchParams.delete('skin'); else u.searchParams.set('skin', n); location = u; };
 
 const rig = new THREE.Group(); scene.add(rig);   // moves and turns in the world; the model inside plays in place
 let model, mixer, skel, B = {}, A = {}, nat = { walk: 1.2, run: 3.2 }, yawOffset = 0, gaitInfo = {}, domGait = 'Walk';
