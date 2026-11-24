@@ -97,8 +97,16 @@ body {
 	<meta name="robots" content="noindex,nofollow">
 <style>
 html,body{overscroll-behavior:none;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;position:fixed;inset:0;overflow:hidden}
-#boot{position:fixed;inset:0;z-index:50;background:#0b0f0a url(index.png) center/cover no-repeat;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;font-family:system-ui,sans-serif;color:#fff;pointer-events:none}
-#boot .box{width:min(560px,80vw);margin-bottom:7vh;background:rgba(0,0,0,.62);padding:14px 18px;border-radius:10px}
+#boot{position:fixed;inset:0;z-index:50;background:#0b0f0a url(load-poster.jpg) center/cover no-repeat;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;font-family:system-ui,sans-serif;color:#fff;pointer-events:none;overflow:hidden}
+#boot video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .8s}
+#boot .shade{position:absolute;inset:0;background:linear-gradient(to bottom,rgba(5,8,5,.45) 0,rgba(5,8,5,0) 22%,rgba(5,8,5,0) 48%,rgba(5,8,5,.9) 100%)}
+#boot .logo{position:absolute;top:max(3vh,env(safe-area-inset-top));left:0;right:0;text-align:center;font:900 clamp(26px,6.4vw,84px)/1 Impact,Haettenschweiler,'Arial Narrow Bold','Arial Black',sans-serif;letter-spacing:.04em;color:#ffb840;text-shadow:0 3px 0 #000,0 0 18px rgba(0,0,0,.8)}
+#boot .box{position:relative;width:min(720px,86vw);margin-bottom:max(5vh,env(safe-area-inset-bottom));background:rgba(0,0,0,.5);padding:12px 18px;border-radius:10px}
+#boot .pilot{font-size:clamp(14px,2.2vw,19px);color:#ffdb99;font-style:italic;margin-bottom:6px}
+#boot .tip{font-size:clamp(13px,2vw,17px);margin-bottom:10px;min-height:2.4em}
+#boot .tip b{color:#f2a23a;margin-right:6px}
+#boot .snd{position:absolute;right:max(14px,env(safe-area-inset-right));bottom:calc(100% + 8px);font-size:13px;background:rgba(0,0,0,.6);padding:6px 12px;border-radius:14px}
+@media (max-height:480px){#boot .sub{display:none}#boot .box{padding:8px 14px;margin-bottom:max(3vh,env(safe-area-inset-bottom))}#boot .tip{margin-bottom:6px;min-height:0}}
 #boot .bar{height:10px;background:rgba(255,255,255,.2);border-radius:5px;overflow:hidden;margin-top:8px}
 #boot .fill{height:100%;width:0;background:#f2a23a;transition:width .2s}
 #boot .txt{font-size:16px}
@@ -106,7 +114,7 @@ html,body{overscroll-behavior:none;touch-action:none;-webkit-user-select:none;us
 </style>
 </head>
 	<body>
-<div id="boot"><div class="box"><div class="txt" id="boot-txt">Downloading…</div><div class="bar"><div class="fill" id="boot-fill"></div></div><div class="sub" style="pointer-events:auto;margin-bottom:6px"><a href="https://bad-ass-tankheads.pages.dev/" style="color:#f2a23a;font-size:14px">Smoother sound on phones: play the multi-threaded version here</a></div><div class="sub">Bad-ass Tankheads · first load is the slow one, later visits use the browser cache</div></div></div>
+<div id="boot"><video id="boot-vid" muted loop playsinline webkit-playsinline preload="auto" poster="load-poster.jpg"></video><div class="shade"></div><div class="logo">BAD-ASS TANKHEADS</div><div class="box"><div class="snd" id="boot-snd">&#9835; Tap for sound</div><div class="pilot" id="boot-pilot"></div><div class="tip" id="boot-tip"></div><div class="txt" id="boot-txt">Downloading…</div><div class="bar"><div class="fill" id="boot-fill"></div></div><div class="sub" style="pointer-events:auto;margin-bottom:6px"><a href="https://bad-ass-tankheads.pages.dev/" style="color:#f2a23a;font-size:14px">Smoother sound on phones: play the multi-threaded version here</a></div><div class="sub">Bad-ass Tankheads · first load is the slow one, later visits use the browser cache</div></div></div>
 <script>
 (function(){
   // keep hold of the game's audio context: unlock it on the first tap/click/key (phones need this),
@@ -123,12 +131,23 @@ html,body{overscroll-behavior:none;touch-action:none;-webkit-user-select:none;us
     var un=function(){(window.__actxs||[]).forEach(function(c){if(c.state!=='running'&&c.resume)c.resume();});};
     ['pointerdown','pointerup','touchstart','touchend','mousedown','click','keydown'].forEach(function(e){window.addEventListener(e,un,true);});
   }
-  var t0=Date.now(),done=false,txt=document.getElementById('boot-txt'),fill=document.getElementById('boot-fill');
-  window.__gameReady=function(){done=true;var b=document.getElementById('boot');if(b)b.remove();};
+  var t0=Date.now(),done=false,seen=false,txt=document.getElementById('boot-txt'),fill=document.getElementById('boot-fill');
+  // the loading film: the still shows at once, the film fades in when enough has buffered; a tip, the pilot's line, music on a tap
+  var L={"tips": ["Rule one: never harm a civilian. Check your line of fire before you pull the trigger.", "Jump again in the air to fire the jets. Hold jump to hover while the fuel lasts.", "Hold jump against a wall to climb it. High ground beats armour.", "Punch, punch, kick: the third hit of the combo does double damage.", "Grenades arc over cover. They also bounce toward people, so look first.", "Red siege machines keep their distance. Close in and they are slow to turn.", "Your wingmates draw fire. Stay near them when your armour is low.", "Jet fuel refills on the ground. Land before a long fight, not during it.", "Scouts are fast and fragile. Cannon first, fists second.", "A mission with every civilian safe scores far more than a fast one."], "def": "warden", "pilots": {"warden": ["Ten civilians in, ten civilians out. I count.", "Capt. Asha Rao", "Warden"], "bulwark": ["Stand behind me. That is what the shield is for.", "Ingrid Solheim", "Bulwark"], "wasp": ["Blink and I'm on the roof already.", "Mika Tanabe", "Wasp"], "longbow": ["One breath, one shot, one fewer machine.", "Élodie Marchand", "Longbow"], "brawler": ["Guns are for people who can't reach.", "Zanele Mokoena", "Brawler"], "mortar_mum": ["Everybody clear? Good. Cover your ears, loves.", "Rosa Delgado", "Mortar Mum"], "ember": ["Armour is only metal that hasn't melted yet.", "Farah Qureshi", "Ember"], "static": ["She's not just a tank. Say hello, she can hear you.", "Dr. Hana Kim", "Static"], "gale": ["Nice view up here. Shame about the robots.", "Aroha Ngata", "Gale"], "hound": ["Found them.", "Katya Volkova", "Hound"], "medic": ["Nobody dies on my shift. Hold still.", "Nurse Amara Okafor", "Medic"], "reaper": ["I helped build the red ones. I will take them apart.", "Lt. Valeria Cruz", "Reaper"]}},vid=document.getElementById('boot-vid'),snd=null,tipEl=document.getElementById('boot-tip'),ti=Math.floor(Math.random()*L.tips.length);
+  var lite=location.search.indexOf('novideo')>=0||(navigator.connection&&(navigator.connection.saveData||/2g/.test(navigator.connection.effectiveType||'')));
+  if(!lite){vid.addEventListener('canplaythrough',function(){vid.style.opacity=1;var q=vid.play();if(q&&q.catch)q.catch(function(){});});vid.src='load.mp4';}
+  var tank=L.def;try{tank=localStorage.getItem('bat_tank')||L.def;}catch(e){}
+  var pl=L.pilots[tank]||L.pilots[L.def];if(pl&&pl[0])document.getElementById('boot-pilot').textContent='“'+pl[0]+'”  '+pl[1]+', '+pl[2];
+  var tip=function(){tipEl.innerHTML='<b>TIP</b>';tipEl.appendChild(document.createTextNode(L.tips[ti++%L.tips.length]));};tip();var tiv=setInterval(tip,5000);
+  var sound=function(){if(done||snd)return;snd=new Audio('load.mp3');snd.loop=true;snd.volume=.55;var q=snd.play();if(q&&q.catch)q.catch(function(){snd=null;});var h=document.getElementById('boot-snd');if(h)h.style.display='none';};
+  ['pointerdown','touchend','keydown'].forEach(function(e){window.addEventListener(e,sound,true);});
+  window.__bootState=function(){return {video:vid.readyState,playing:!vid.paused,t:vid.currentTime,shown:vid.style.opacity,sound:!!snd,tip:tipEl.textContent};};
+  window.__gameReady=function(){done=true;clearInterval(tiv);if(snd){snd.pause();snd=null;}try{vid.pause();vid.removeAttribute('src');vid.load();}catch(e){}var b=document.getElementById('boot');if(b)b.remove();};
   var iv=setInterval(function(){
     if(done){clearInterval(iv);return;}
     var s=Math.round((Date.now()-t0)/1000),p=document.getElementById('status-progress'),st=document.getElementById('status');
-    if(st&&p&&p.hasAttribute('value')&&p.max>0&&p.value<p.max){var pc=Math.round(100*p.value/p.max);txt.textContent='Step 1 of 3 · Downloading '+pc+'%';fill.style.width=(pc*0.6)+'%';}
+    if(st&&p&&p.hasAttribute('value')&&p.max>0&&p.value<p.max){seen=true;var pc=Math.round(100*p.value/p.max);txt.textContent='Step 1 of 3 · Downloading '+pc+'%';fill.style.width=(pc*0.6)+'%';}
+    else if(st&&!seen&&s<4){txt.textContent='Step 1 of 3 · Connecting…';}
     else if(st){txt.textContent='Step 2 of 3 · Starting the engine… '+s+' s';fill.style.width='70%';}
     else{txt.textContent='Step 3 of 3 · Loading the level and compiling shaders… '+s+' s';fill.style.width=Math.min(98,75+s/2)+'%';}
   },200);
@@ -151,7 +170,7 @@ html,body{overscroll-behavior:none;touch-action:none;-webkit-user-select:none;us
 
 		<script src="index.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":32794792,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4,"serviceWorker":"index.service.worker.js"};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":33819832,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4,"serviceWorker":"index.service.worker.js"};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 
